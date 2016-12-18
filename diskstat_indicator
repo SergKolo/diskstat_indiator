@@ -250,7 +250,7 @@ class DiskStatIndicator(object):
             counter = counter + 1
             size = size / 1024
     
-        return str(round(size, 2)) + "  " + prefix[counter]
+        return str(round(size, 2)) + "  " + prefix[counter] + " / s"
     
     def is_mounted(self,*args):
         with open('/proc/mounts') as mounts:
