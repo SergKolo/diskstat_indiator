@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#
+# Author: Serg Kolo , contact: 1047481448@qq.com
+# Date: Dec 16 , 2016
+# Purpose: appindicator for easy display block device i/o usage
+# Tested on: Ubuntu 16.04 LTS
+#
+#
+# Licensed under The MIT License (MIT).
+# See included LICENSE file or the notice below.
+#
+# Copyright © 2016 Sergiy Kolodyazhnyy
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+import gi
+gi.require_version('AppIndicator3', '0.1')
+from gi.repository import GLib as glib
+from gi.repository import AppIndicator3 as appindicator
+from gi.repository import Gtk as gtk
+from collections import OrderedDict
+import subprocess
+import json
+import os
+import time
+import copy
+import re
+
+class DiskStatIndicator(object):
+
+    def __init__(self):
+        self.app = appindicator.Indicator.new(
+            'diskstat-indicator', "",
+            appindicator.IndicatorCategory.HARDWARE
+            )
+
+        self.app.set_status(appindicator.IndicatorStatus.ACTIVE)
+        self.previous_usage = OrderedDict()
+
+        self.config_file = os.path.join(os.path.expanduser('~'),
+                                        '.diskstat_indicator.json'
+        )
+        
+        # default values
+        self.show_panel_text = True
+        self.timeout = 1.5
+
+        if os.path.exists(self.config_file):
+           self.read_config_file()
+        else:
+           self.make_config_file()
+       
+
+        self.designated_menuitem = None
+        self.make_menu()
+        self.update_data()
+        self.app.set_icon('emblem-system')
+
+    def make_config_file(self,*args):
+        prefs = {'timeout':self.timeout,
+                 'show_panel_text':self.show_panel_text
+        }
+        with open(self.config_file,'w') as f: 
+             
+            json.dump(prefs, f,
+                      indent=4, sort_keys=True
+            )
+    
+    def read_config_file(self,*args):
+        data = None
+        with open(self.config_file) as f:
+            try:
+                data = json.load(f)
+            except:
+                print('>>> read error')
+                return
+        if 'timeout' in data.keys():
+            self.timeout = data['timeout']
+        if 'show_panel_text' in data.keys():
+            self.show_panel_text = data['show_panel_text']
+            print(self.show_panel_text)
+                
+ 
+
+    def get_list_diff(self,*args):
+        return list(map(lambda x,y: (x-y)/self.timeout,
+                        args[-2],args[-1]
+        ))
+
+    def compute_total(self,*args):
+        reads = sum(map(lambda x: x[0],args[-1].values())) 
+        writes = sum(map(lambda x: x[1],args[-1].values()))
+        return (self.get_human_readable(reads),
+                self.get_human_readable(writes)
+        )
+         
+
+    def update_data(self,*args):
+        current_usage = self.get_dev_usage()  
+        diff = OrderedDict()
+
+        if not self.previous_usage:
+            self.previous_usage = current_usage
+            return self.callback()
+
+        for key in current_usage.keys(): 
+            if key not in self.previous_usage.keys():
+               self.previous_usage[key] = current_usage[key]
+               continue
+            diff[key] = self.get_list_diff(current_usage[key],
+                        self.previous_usage[key]
+            )
+
+ 
+        total = self.compute_total(diff)
+        app_label = 'R:' + total[0] + ' | W:' + total[1]
+        if self.show_panel_text:
+            print(len(app_label))
+            self.app.set_label(app_label,"")
+        else: self.app.set_label("","")
+
+        label = ''
+        for key,values in diff.items():
+            value_string = ''
+            for value in values:
+                value_string += " "*15 + self.get_human_readable(value)
+            label +=  key + value_string + "\n"
+        label += 'TOTAL:' + " "*12 + total[0] +" "*12 + total[1]
+                
+        if self.designated_menuitem: 
+#            print(time.time())
+#            print(label)
+            self.designated_menuitem.set_label(label)
+            
+        self.previous_usage = current_usage
+        self.callback()
+
+    def callback(self):
+        glib.timeout_add_seconds(self.timeout, self.update_data)
+
+
+    def add_menu_item(self, menu_obj, item_type, image, label, action, args):
+        """ dynamic function that can add menu items depending on
+            the item type and other arguments"""
+        menu_item, icon = None, None
+        if item_type is gtk.ImageMenuItem and label:
+            menu_item = gtk.ImageMenuItem.new_with_label(label)
+            menu_item.set_always_show_image(True)
+            if '/' in image:
+                icon = gtk.Image.new_from_file(image)
+            else:
+                icon = gtk.Image.new_from_icon_name(image, 48)
+            menu_item.set_image(icon)
+        elif item_type is gtk.ImageMenuItem and not label:
+            menu_item = gtk.ImageMenuItem()
+            menu_item.set_always_show_image(True)
+            if '/' in image:
+                icon = gtk.Image.new_from_file(image)
+            else:
+                icon = gtk.Image.new_from_icon_name(image, 16)
+            menu_item.set_image(icon)
+        elif item_type is gtk.MenuItem:
+            menu_item = gtk.MenuItem(label)
+        elif item_type is gtk.SeparatorMenuItem:
+            menu_item = gtk.SeparatorMenuItem()
+        if action:
+            menu_item.connect('activate', action, *args)
+        menu_obj.append(menu_item)
+        menu_item.show()
+
+    def make_menu(self,*args):
+        """ generates entries in the indicator"""
+        if hasattr(self, 'app_menu'):
+            for item in self.app_menu.get_children():
+                self.app_menu.remove(item)
+
+        self.app_menu = gtk.Menu()
+        self.app.set_menu(self.app_menu)
+
+        header = 'DEVICE READS WRITES'
+        contents = [self.app_menu,gtk.MenuItem,None,header,None,[None]]
+        self.add_menu_item(*contents)
+       
+ 
+        last = None
+        for item in self.app_menu.get_children():
+            last = item
+        last.set_sensitive(False)
+        
+        contents = [self.app_menu,gtk.MenuItem,None,'designated',None,[None]]
+        self.add_menu_item(*contents)
+        
+        last = None
+        for item in self.app_menu.get_children():
+            if item.get_label() == 'designated' :
+               last = item
+
+        print('last:',last.get_label())
+             
+        self.designated_menuitem = last 
+
+        self.designated_menuitem.set_sensitive(False)
+
+        item = gtk.CheckMenuItem('Panel Label (Total) on/off')
+        self.app_menu.append(item)
+        if self.show_panel_text:
+            item.set_active(True)
+        item.connect('activate', self.toggle_panel_text )
+    
+        item.show()
+
+        contents = [self.app_menu,gtk.ImageMenuItem,'exit','Quit',self.quit,[None]]
+        self.add_menu_item(*contents)
+        self.app_menu.show_all()
+
+    def toggle_panel_text(self,*args):
+        if self.show_panel_text : self.show_panel_text = False
+        else: self.show_panel_text = True
+        self.make_config_file()
+
+
+    def get_human_readable(self,size):
+        """ converts size in bytes to
+        human readable value in powers of 1024.
+        Essentially, same as what df -h gives, or
+        """
+        prefix = ['B', 'KiB', 'MiB', 'GiB',
+                  'TiB', 'PiB', 'EiB',
+                  'ZiB', 'YiB'
+                  ]
+        counter = 0
+        while size / 1024 > 0.9:
+            counter = counter + 1
+            size = size / 1024
+    
+        return str(round(size, 2)) + "  " + prefix[counter]
+    
+    def is_mounted(self,*args):
+        with open('/proc/mounts') as mounts:
+             mounted = []
+             for line in mounts:
+                 mounted.append(line.split()[0])
+        mnt_set = set(mounted)
+        for dev in mnt_set:
+            if args[-1] in dev: return True
+
+    def get_dev_usage(self,*args):
+        data = OrderedDict() 
+        with open('/proc/diskstats') as ds:
+             lines = ds.readlines()
+    
+        total = [0,0]
+        human_readable_total = ''
+        for l in lines:
+            fields = l.strip().split()
+            if int(fields[0]) == 8:
+                dev = fields[2]
+                if (not re.search('\d',dev) or 
+                    not self.is_mounted(dev)): continue
+                data[dev] = [int(fields[5])*512,
+                             int(fields[9])*512
+                ]
+        return data
+
+    def run(self):
+        """ Launches the indicator """
+        try:
+            gtk.main()
+        except KeyboardInterrupt:
+            pass
+
+    def quit(self, *args):
+        """ closes indicator """
+        gtk.main_quit()
+
+def main():
+    """ defines program entry point """
+    indicator = DiskStatIndicator()
+    indicator.run()
+
+if __name__ == '__main__':
+    main()
