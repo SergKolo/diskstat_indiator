@@ -1,0 +1,15 @@
+Source: diskstat-indicator
+Section: python
+Priority: extra
+Maintainer: Sergiy Kolodyazhnyy <1047481448@qq.com>
+Build-Depends: debhelper (>= 9)
+Standards-Version: 3.9.8
+
+Package: diskstat-indicator
+Architecture: all
+Depends: python3-gi,
+         gir1.2-appindicator3-0.1,
+         ${python:Depends},
+         ${misc:Depends}
+Description: shows disk i/o usage
+    Indicator for displaying disk i/o usage. Parses /proc/diskstat

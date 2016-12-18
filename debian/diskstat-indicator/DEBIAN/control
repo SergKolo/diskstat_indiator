@@ -1,0 +1,10 @@
+Package: diskstat-indicator
+Version: 0.1
+Architecture: all
+Maintainer: Sergiy Kolodyazhnyy <1047481448@qq.com>
+Installed-Size: 22
+Depends: python3-gi, gir1.2-appindicator3-0.1
+Section: python
+Priority: extra
+Description: shows disk i/o usage
+    Indicator for displaying disk i/o usage. Parses /proc/diskstat

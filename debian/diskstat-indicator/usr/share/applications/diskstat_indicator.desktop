@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Name=DiskStat Indicator
+Comment=Indicator for reporting disk i/o usage
+Exec=diskstat_indicator
+Type=Application
+Icon=emblem-system
+Terminal=false
