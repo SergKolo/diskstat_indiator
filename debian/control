@@ -2,7 +2,7 @@ Source: diskstat-indicator
 Section: python
 Priority: extra
 Maintainer: Sergiy Kolodyazhnyy <1047481448@qq.com>
-Build-Depends: debhelper (>= 9)
+Build-Depends: debhelper (>= 9), dh-python3
 Standards-Version: 3.9.8
 
 Package: diskstat-indicator
